@@ -254,5 +254,5 @@ const styles = StyleSheet.create({
     width: W,
     height: H,
   },
-  webview: { flex: 1, backgroundColor: 'transparent' },
+  webview: { flex: 1, backgroundColor: '#000000' },
 });
