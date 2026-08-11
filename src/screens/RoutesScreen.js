@@ -414,40 +414,13 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
                     route={route}
                     selected={i === selectedIdx}
                     onPress={() => handleSelectRoute(i)}
+                    onFollow={requestFollow}
                     delay={i * 80}
                   />
               ))}
             
-              {/* ── Follow route section ── */}
-              {selected && (
-                <View style={styles.followSection}>
-                  <View style={styles.followSectionInfo}>
-                    <Text style={styles.followSectionTitle}>
-                      Sunny route selected
-                    </Text>
-                    <Text style={styles.followSectionMeta}>
-                      {selected.duration_min} min · {selected.distance_km} km
-                    </Text>
-                    <Text style={styles.followSectionDesc}>
-                      See your position and phone direction on the selected route.
-                    </Text>
-                  </View>
 
-                  <TouchableOpacity
-                    style={styles.followBtn}
-                    onPress={requestFollow}
-                    accessibilityLabel={`Follow route — ${selected.duration_min} minutes, ${selected.distance_km} kilometres`}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.followBtnLabel}>Follow route</Text>
-                  </TouchableOpacity>
-
-                  <Text style={styles.followDisclaimer}>
-                    Location and sunshine estimates may be inaccurate. Stay
-                    aware of your surroundings and follow local signs.
-                  </Text>
-                </View>
-              )}
+              
             </ScrollView>
           </>
         )}
