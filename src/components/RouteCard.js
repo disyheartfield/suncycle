@@ -6,8 +6,7 @@ import {
 } from "react-native";
 import { colours, radius, spacing, shadows, sunScoreColour } from "../theme";
 import SunScore from "./SunScore";
-
-export default function RouteCard({ route, selected, onPress, delay = 0 }) {
+export default function RouteCard({ route, selected, onPress, onFollow, delay = 0 }) {
   const slideAnim = useRef(new Animated.Value(40)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.97)).current;
@@ -110,6 +109,17 @@ export default function RouteCard({ route, selected, onPress, delay = 0 }) {
               }
             ]} />
           </View>
+          {/* Follow route button — only on selected card */}
+          {isSelected && (
+            <TouchableOpacity
+              style={styles.followBtn}
+              onPress={onFollow}
+              accessibilityLabel="Follow this route"
+              accessibilityRole="button"
+            >
+              <Text style={styles.followBtnText}>Follow route</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Selected indicator */}
           {isSelected && (
@@ -260,5 +270,18 @@ const styles = StyleSheet.create({
   scoreBarFill: {
     height: "100%",
     borderRadius: radius.full,
+  },
+  followBtn: {
+    backgroundColor : colours.sun,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  followBtnText: {
+    color : colours.bg,
+    fontSize : 15,
+    fontWeight : '700'
   },
 });

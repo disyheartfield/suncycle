@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.suncycle2"
+      "bundleIdentifier": "com.anonymous.suncycle2",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Your location is used to show where you are in relation to your selected sunny route. It is not used for background tracking or journey history."
+      }
     },
     "android": {
       "adaptiveIcon": {

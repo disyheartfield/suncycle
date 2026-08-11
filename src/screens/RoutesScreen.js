@@ -23,8 +23,9 @@ import { colours, radius, spacing, sunScoreColour } from '../theme';
 import RouteCard from '../components/RouteCard';
 import SunScore from '../components/SunScore';
 import ShadingWebView from '../components/ShadingWebView';
-import UserLocationMarker from '../components/UserLocationMarker';
 import { useFollowRoute } from '../hooks/useFollowRoute';
+import LoadingScreen from '../components/LoadingScreen';
+
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 
@@ -42,6 +43,8 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const [routes, setRoutes]           = useState(initialRoutes);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sheetExpanded, setSheetExpanded] = useState(true);
+  const [isReady, setIsReady] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   // ── ShadeMap shadow-scoring state ───────────────────────────────────────────
 
@@ -53,6 +56,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const {
     followState,
     userLocation,
+    setUserLocation,
     userHeading,
     requestFollow,
     startAfterRationale,
@@ -157,6 +161,10 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const handleProgress = useCallback((msg) => {
     setShadingStatus('loading');
     setShadingMessage(msg);
+    const match = msg.match(/(\d+)\/(\d+)/);
+    if (match) {
+      setLoadingProgress((parseInt(match[1]) - 1) / parseInt(match[2]));
+    }
   }, []);
 
   const handleScores = useCallback((results) => {
@@ -181,12 +189,14 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
       }));
     });
 
-    setShadingStatus('done');
+    setShadingStatus('done')
+    setIsReady(true); 
   }, []);
 
   const handleShadingError = useCallback((err) => {
     setShadingStatus('error');
     setShadingMessage(String(err));
+    setIsReady(true) ; 
   }, []);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -197,6 +207,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
 
   return (
     <View style={styles.screen}>
+  
 
       {/* ── Map ── */}
       <Animated.View style={[styles.mapWrap, { height: mapAnim }]}>
@@ -205,7 +216,13 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
           style={StyleSheet.absoluteFill}
           mapType="mutedStandard"
           userInterfaceStyle="dark"
-          showsUserLocation={false}
+          showsUserLocation={isFollowing}
+          followsUserLocation={false}
+          onUserLocationChange={(e)=>{
+            if (isFollowing){
+              setUserLocation(e.nativeEvent.coordinate);
+            }
+          }}
           showsCompass={false}
           showsScale={false}
           initialRegion={{
@@ -252,14 +269,6 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
               <Text style={styles.markerEndIcon}>★</Text>
             </View>
           </Marker>
-
-          {/* User location — only while following */}
-          {isFollowing && (
-            <UserLocationMarker
-              coordinate={userLocation}
-              heading={userHeading}
-            />
-          )}
         </MapView>
 
         {/* Back button */}
@@ -397,16 +406,18 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.cardList}
             >
-              {routes.map((route, i) => (
-                <RouteCard
-                  key={route.id}
-                  route={route}
-                  selected={i === selectedIdx}
-                  onPress={() => handleSelectRoute(i)}
-                  delay={i * 80}
-                />
-              ))}
 
+
+                {routes.map((route, i) => (
+                  <RouteCard
+                    key={route.id}
+                    route={route}
+                    selected={i === selectedIdx}
+                    onPress={() => handleSelectRoute(i)}
+                    delay={i * 80}
+                  />
+              ))}
+            
               {/* ── Follow route section ── */}
               {selected && (
                 <View style={styles.followSection}>
@@ -576,6 +587,13 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         </View>
       </Modal>
 
+      <Modal visible={!isReady} transparent statusBarTranslucent>
+        <LoadingScreen
+          progress={loadingProgress}
+          message={shadingMessage}
+        />
+      </Modal>
+
     </View>
   );
 }
@@ -583,7 +601,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colours.bg },
+  screen: { flex: 1, backgroundColor: colours.bg, position: 'relative' },
 
   // ── Map ──
   mapWrap: { width: '100%', position: 'relative' },

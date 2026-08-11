@@ -1,0 +1,149 @@
+# Follow Route — Test Checklist & Known Limitations
+
+## Before testing: install expo-location
+cd ~/Downloads/suncycle2
+npx expo install expo-location
+npx expo run:ios   # full rebuild required after adding expo-location
+
+
+## Route selection
+
+[ ] All three route cards display correctly.
+[ ] Tapping a card highlights it (selected styling).
+[ ] The "Follow route" button appears at the bottom of the sheet when a route is selected.
+[ ] Changing the selected route before following updates the highlighted card.
+[ ] "Follow route" reads the real duration / distance of the selected route
+    (not hard-coded values).
+
+
+## Location permission — first time
+
+[ ] Tapping "Follow route" shows the rationale sheet (not the system prompt directly).
+[ ] Rationale text explains the purpose without implying background tracking.
+[ ] Tapping "Cancel" on the rationale returns to route-selection with no permission request.
+[ ] Tapping "Allow" on the rationale shows the iOS system permission prompt.
+[ ] Selecting "While Using" on the system prompt enters following mode.
+[ ] Selecting "Don't Allow" on the system prompt shows the denied modal.
+
+
+## Location permission — subsequent taps
+
+[ ] If permission was already granted, tapping "Follow route" skips the rationale sheet.
+[ ] If permission was previously denied, tapping "Follow route" shows the denied modal
+    immediately (no system prompt — iOS blocks a second request).
+[ ] If Location Services are disabled at OS level, the services-disabled modal appears.
+
+
+## Denied and services-disabled modals
+
+[ ] "Close" button dismisses the modal and returns to route selection.
+[ ] "Open Settings" button opens the device Settings app.
+[ ] The sunny route remains visible and interactive after dismissing either modal.
+[ ] Permission is NOT re-requested automatically after dismissal.
+
+
+## Active following mode
+
+[ ] The blue location dot appears on the map.
+[ ] The dot is clearly distinct from the yellow route line.
+[ ] The dot is visible over dark roads, parks and water areas.
+[ ] The "Following sunny route" banner appears near the top of the map.
+[ ] The route info bar shows the correct duration, distance and sun percentage.
+[ ] The "End" button is clearly visible at all times.
+[ ] The "Centre on me" button appears when userLocation is available.
+[ ] Tapping "Centre on me" animates the map to the user's position.
+[ ] After "Centre on me", the user can pan/zoom freely without the map snapping back.
+[ ] No turn instructions or rerouting logic activates.
+[ ] The original route geometry is unchanged.
+[ ] The selected route cannot be accidentally changed while following is active.
+
+
+## Direction cone
+
+[ ] The cone appears when heading data is available and accurate.
+[ ] The cone rotates as the phone rotates.
+[ ] The cone is translucent (not solid).
+[ ] The cone opens away from the dot in the direction the phone is pointing.
+[ ] When the phone is held still, the cone does not wobble noticeably.
+[ ] The cone disappears or is absent when heading accuracy is poor.
+[ ] The cone disappears when heading is unavailable (e.g. no compass hardware).
+[ ] The location dot continues to work without the cone.
+[ ] The cone does NOT point towards the route or the destination automatically.
+
+
+## Ending the session
+
+[ ] Tapping "End" stops location updates and heading updates immediately.
+[ ] The blue dot and cone are removed from the map.
+[ ] The screen returns to normal route-selection mode.
+[ ] "Follow route" can be tapped again immediately after ending.
+[ ] Navigating back (← button) during following stops tracking.
+[ ] Navigating to the Home screen stops tracking.
+
+
+## Privacy
+
+[ ] No coordinates or heading values appear in the Expo terminal log.
+[ ] No coordinates or heading values appear in network requests
+    (check Expo's network panel or Charles Proxy if available).
+[ ] Following stops when the app is backgrounded (no background-location mode enabled).
+[ ] No "Always Allow" location option is ever presented to the user.
+
+
+## Accessibility
+
+[ ] "Follow route", "End" and "Centre on me" all have correct accessibilityLabel values.
+[ ] The selected route card announces its selected state to VoiceOver.
+[ ] The direction cone has accessibilityElementsHidden / no misleading label.
+[ ] The rationale and denied modals are navigable by VoiceOver.
+[ ] All interactive elements meet minimum touch-target size guidelines.
+
+
+## Device-specific
+
+[ ] Test on a physical device — the simulator cannot fully validate GPS or compass.
+[ ] Portrait and landscape orientations both work correctly.
+[ ] The cone rotation is correct when the device is held in landscape.
+
+
+---
+
+## Known Limitations
+
+1. **Simulator only**
+   GPS and compass are simulated in Xcode Simulator. All location and
+   heading tests must be verified on a real device before shipping.
+
+2. **Map rotation**
+   The direction cone rotation assumes the map is north-up (default).
+   If the user rotates the map (pinch-rotate gesture), the cone's
+   visual direction will no longer match the phone's real heading.
+   Disabling map rotation (rotateEnabled={false} on MapView) eliminates
+   this. It is not disabled in this implementation — consider doing so.
+
+3. **Marker re-render cost**
+   Every heading update causes the UserLocationMarker to re-render.
+   On older devices this may produce minor jank. Mitigation options
+   include React.memo on the component, or using a native map overlay
+   (e.g. react-native-maps Circle/Polygon) instead of a View-based marker.
+
+4. **Cone projection**
+   The cone is drawn in React Native view space, not map space.
+   At extreme zoom levels or during fast map movement the cone's
+   apparent angular size may look different from what is expected.
+
+5. **Heading accuracy label**
+   The cone is hidden when accuracy > 45°. There is no visible
+   "accuracy degraded" notice while the cone is shown. Consider adding
+   a subtle indicator if compass interference is common in your area.
+
+6. **"Near the route" proximity**
+   The feature does not show whether the user is near or on the route.
+   If desired, add a proximity calculation using the reported
+   location accuracy before displaying any such status.
+
+7. **expo-location version**
+   This implementation targets the version installed by
+   `npx expo install expo-location` for SDK 56.
+   If the project is upgraded, re-run npx expo install expo-location
+   to get the compatible version.
