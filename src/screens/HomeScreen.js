@@ -13,13 +13,14 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Time picker state — defaults to now
-  const now = new Date();
-  const [departureHour, setDepartureHour] = useState(now.getHours());
-  const [departureMin, setDepartureMin]  = useState(now.getMinutes());
+  // No custom selection means "now" at the moment Search is pressed.
+  const initialTime = useRef(new Date()).current;
+  const [hasCustomTime, setHasCustomTime] = useState(false);
+  const [departureHour, setDepartureHour] = useState(initialTime.getHours());
+  const [departureMin, setDepartureMin]  = useState(initialTime.getMinutes());
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [pickerHour, setPickerHour] = useState(now.getHours());
-  const [pickerMin, setPickerMin]   = useState(now.getMinutes());
+  const [pickerHour, setPickerHour] = useState(initialTime.getHours());
+  const [pickerMin, setPickerMin]   = useState(initialTime.getMinutes());
 
   const titleAnim  = useRef(new Animated.Value(0)).current;
   const cardAnim   = useRef(new Animated.Value(30)).current;
@@ -34,29 +35,41 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const departureLabel = () => {
-    const h = String(departureHour).padStart(2, "0");
-    const m = String(departureMin).padStart(2, "0");
-    const isNowish = Math.abs(
-      departureHour * 60 + departureMin - now.getHours() * 60 - now.getMinutes()
-    ) < 2;
-    return isNowish ? `Now  (${h}:${m})` : `${h}:${m}`;
-  };
-
-  const departureTimeString = () => {
+    if (!hasCustomTime) return "Now";
     const h = String(departureHour).padStart(2, "0");
     const m = String(departureMin).padStart(2, "0");
     return `${h}:${m}`;
   };
 
+  const buildDepartureAt = () => {
+    const departure = new Date();
+    if (hasCustomTime) {
+      departure.setHours(departureHour, departureMin, 0, 0);
+    }
+    return departure;
+  };
+
   const openPicker = () => {
-    setPickerHour(departureHour);
-    setPickerMin(departureMin);
+    const current = new Date();
+    setPickerHour(hasCustomTime ? departureHour : current.getHours());
+    setPickerMin(hasCustomTime ? departureMin : current.getMinutes());
     setShowTimePicker(true);
   };
 
   const confirmTime = () => {
     setDepartureHour(pickerHour);
     setDepartureMin(pickerMin);
+    setHasCustomTime(true);
+    setShowTimePicker(false);
+  };
+
+  const useCurrentTime = () => {
+    const current = new Date();
+    setDepartureHour(current.getHours());
+    setDepartureMin(current.getMinutes());
+    setPickerHour(current.getHours());
+    setPickerMin(current.getMinutes());
+    setHasCustomTime(false);
     setShowTimePicker(false);
   };
 
@@ -68,7 +81,7 @@ export default function HomeScreen({ navigation }) {
     setError(null);
     setLoading(true);
     try {
-      const data = await fetchRoutes(start, end, departureTimeString());
+      const data = await fetchRoutes(start, end, buildDepartureAt());
       navigation.navigate("Routes", { data, start, end });
     } catch (e) {
       if (e instanceof APIError) {
@@ -249,6 +262,10 @@ export default function HomeScreen({ navigation }) {
               {String(pickerHour).padStart(2, "0")}:{String(pickerMin).padStart(2, "0")}
             </Text>
 
+            <TouchableOpacity style={styles.nowBtn} onPress={useCurrentTime}>
+              <Text style={styles.nowBtnText}>Use current time</Text>
+            </TouchableOpacity>
+
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTimePicker(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -315,6 +332,8 @@ const styles = StyleSheet.create({
   pickerCellTextActive: { color: colours.bg, fontWeight: "700" },
   pickerColon: { fontSize: 28, color: colours.textTertiary, marginTop: 36, fontWeight: "300" },
   pickerPreview: { fontFamily: "Georgia", fontSize: 40, fontWeight: "700", color: colours.sun, textAlign: "center", marginVertical: spacing.lg, letterSpacing: -2 },
+  nowBtn: { alignSelf: "center", paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginTop: -spacing.sm, marginBottom: spacing.md },
+  nowBtnText: { color: colours.sun, fontSize: 13, fontWeight: "600" },
   modalBtns: { flexDirection: "row", gap: spacing.sm },
   modalCancel: { flex: 1, backgroundColor: colours.bgElevated, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center", borderWidth: 1, borderColor: colours.border },
   modalCancelText: { color: colours.textSecondary, fontSize: 15, fontWeight: "500" },

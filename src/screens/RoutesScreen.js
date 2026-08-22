@@ -32,11 +32,41 @@ const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SHEET_FULL = SCREEN_H * 0.52;
 const SHEET_MINI = 88;
 
+function describeRoute(sunPercent, departureAt) {
+  const departure = new Date(departureAt);
+  const hour = Number.isNaN(departure.getTime()) ? 12 : departure.getHours();
+  const timeOfDay = hour < 6 ? 'night'
+    : hour < 12 ? 'morning'
+    : hour < 17 ? 'afternoon'
+    : hour < 21 ? 'evening'
+    : 'night';
+
+  if (sunPercent >= 80) return `Very sunny ${timeOfDay} route`;
+  if (sunPercent >= 60) return `Mostly sunny ${timeOfDay} route`;
+  if (sunPercent >= 40) return 'Mix of sun and shade';
+  if (sunPercent > 0) return 'Mostly shaded route';
+  return timeOfDay === 'night' ? 'Night ride — no direct sun' : 'Fully shaded route';
+}
+
+function gradeRoute(sunPercent) {
+  if (sunPercent >= 75) return '☀  Excellent';
+  if (sunPercent >= 55) return '⛅ Good';
+  if (sunPercent >= 35) return '🌤 Moderate';
+  return '☁  Mostly shaded';
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RoutesScreen({ route: navRoute, navigation }) {
   const { data, start, end } = navRoute.params;
-  const { routes: initialRoutes, sun_position, departure_time, start_coords, end_coords } = data;
+  const {
+    routes: initialRoutes,
+    sun_position,
+    departure_time,
+    departure_at,
+    start_coords,
+    end_coords,
+  } = data;
 
   // ── Route selection state ───────────────────────────────────────────────────
 
@@ -105,7 +135,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         animated: true,
       }), 100);
     }
-  }, [selectedIdx, sheetExpanded]);
+  }, [selected?.id, sheetExpanded, isFollowing]);
 
   // ── Auto-frame on follow start ──────────────────────────────────────────────
 
@@ -172,26 +202,32 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
       const updated = prev.map(route => {
         const match = results.find(r => r.routeId === route.id);
         if (!match) return route;
-        const finalPercent = Math.round((match.buildingScore ?? 0.5) * 1000) / 10;
+        const finalPercent = Math.round((match.sunPercent ?? 0) * 10) / 10;
         return {
           ...route,
           sun_percent: finalPercent,
           sunny_km:    Math.round(route.distance_km * finalPercent / 100 * 10) / 10,
+          segments:     match.segments,
+          score:        finalPercent,
+          grade:        gradeRoute(finalPercent),
+          description:  describeRoute(finalPercent, departure_at),
         };
       });
 
       const sunniest = updated.reduce((a, b) => a.sun_percent > b.sun_percent ? a : b);
       const fastest  = updated.reduce((a, b) => a.duration_min < b.duration_min ? a : b);
-      return updated.map(r => ({
-        ...r,
-        is_sunniest: r.id === sunniest.id,
-        is_fastest:  r.id === fastest.id,
-      }));
+      return updated
+        .map(r => ({
+          ...r,
+          is_sunniest: r.id === sunniest.id,
+          is_fastest:  r.id === fastest.id,
+        }))
+        .sort((a, b) => b.sun_percent - a.sun_percent || a.duration_min - b.duration_min);
     });
 
     setShadingStatus('done')
     setIsReady(true); 
-  }, []);
+  }, [departure_at]);
 
   const handleShadingError = useCallback((err) => {
     setShadingStatus('error');
@@ -301,9 +337,11 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         )}
 
         {/* Shading progress banner (idle / loading state) */}
-        {!isFollowing && shadingStatus === 'loading' && (
+        {!isFollowing && (shadingStatus === 'loading' || shadingStatus === 'error') && (
           <View style={styles.shadingBanner}>
-            <Text style={styles.shadingBannerText}>{shadingMessage}</Text>
+            <Text style={styles.shadingBannerText}>
+              {shadingStatus === 'error' ? `ShadeMap error: ${shadingMessage}` : shadingMessage}
+            </Text>
           </View>
         )}
 
@@ -427,10 +465,10 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
       </Animated.View>
 
       {/* ── Hidden ShadeMap WebView (shadow scoring) ── */}
-      {routes && (
+      {routes && shadingStatus !== 'done' && shadingStatus !== 'error' && (
         <ShadingWebView
           routes={routes}
-          departureTime={departure_time}
+          departureAt={departure_at}
           onProgress={handleProgress}
           onScores={handleScores}
           onError={handleShadingError}
