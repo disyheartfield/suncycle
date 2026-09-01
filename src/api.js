@@ -42,10 +42,19 @@ async function request(path, options = {}) {
  * Fetch sunniest cycling routes between two postcodes.
  * @param {string} start - UK postcode e.g. "N19 3DA"
  * @param {string} end - UK postcode e.g. "SE1 7PB"
- * @param {string|null} departureTime - "HH:MM" or null for now
+ * @param {string|Date|null} departureAt - ISO timestamp/Date, or null for now
  */
-export async function fetchRoutes(start, end, departureTime = null) {
-  return request("/routes", {
+export async function fetchRoutes(start, end, departureAt = null) {
+  const departure = departureAt ? new Date(departureAt) : new Date();
+  if (Number.isNaN(departure.getTime())) {
+    throw new APIError("Invalid departure time", 400);
+  }
+
+  const departureTime = [departure.getHours(), departure.getMinutes()]
+    .map(value => String(value).padStart(2, "0"))
+    .join(":");
+
+  const data = await request("/routes", {
     method: "POST",
     body: JSON.stringify({
       start: start.trim().toUpperCase(),
@@ -53,6 +62,13 @@ export async function fetchRoutes(start, end, departureTime = null) {
       departure_time: departureTime,
     }),
   });
+
+  // The backend currently accepts HH:MM. Preserve the exact timestamp chosen
+  // on the device so ShadeMap and every frontend consumer use one instant.
+  return {
+    ...data,
+    departure_at: departure.toISOString(),
+  };
 }
 
 export async function healthCheck() {
