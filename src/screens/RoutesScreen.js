@@ -32,28 +32,66 @@ const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SHEET_FULL = SCREEN_H * 0.52;
 const SHEET_MINI = 88;
 
-function describeRoute(sunPercent, departureAt) {
+function describeRoute(sunPercent, departureAt, variantIndex = 0) {
   const departure = new Date(departureAt);
-  const hour = Number.isNaN(departure.getTime()) ? 12 : departure.getHours();
-  const timeOfDay = hour < 6 ? 'night'
-    : hour < 12 ? 'morning'
-    : hour < 17 ? 'afternoon'
-    : hour < 21 ? 'evening'
-    : 'night';
+  const hour = Number.isNaN(departure.getTime())
+    ? 12
+    : departure.getHours();
 
-  if (sunPercent >= 80) return `Very sunny ${timeOfDay} route`;
-  if (sunPercent >= 60) return `Mostly sunny ${timeOfDay} route`;
-  if (sunPercent >= 40) return 'Mix of sun and shade';
-  if (sunPercent > 0) return 'Mostly shaded route';
-  return timeOfDay === 'night' ? 'Night ride — no direct sun' : 'Fully shaded route';
+  const timeOfDay = hour < 6
+    ? 'night'
+    : hour < 12
+      ? 'morning'
+      : hour < 17
+        ? 'afternoon'
+        : hour < 21
+          ? 'evening'
+          : 'night';
+
+  let phrases;
+
+  if (sunPercent >= 80) {
+    phrases = [
+      `Very sunny ${timeOfDay} route`,
+      `Bright ${timeOfDay} ride`,
+      'Sunshine for most of the journey',
+    ];
+  } else if (sunPercent >= 60) {
+    phrases = [
+      `Mostly sunny ${timeOfDay} route`,
+      'Plenty of sun along the way',
+      'Bright route with some shaded stretches',
+    ];
+  } else if (sunPercent >= 40) {
+    phrases = [
+      'Mix of sun and shade',
+      'Balanced sunny and shaded stretches',
+      'Alternating sun and shelter',
+    ];
+  } else if (sunPercent > 0) {
+    phrases = [
+      'Mostly shaded route',
+      'Sheltered for most of the journey',
+      'Limited direct sunlight',
+    ];
+  } else if (timeOfDay === 'night') {
+    phrases = [
+      'Night ride — no direct sun',
+      'After-dark route',
+      'No direct sunlight at this time',
+    ];
+  } else {
+    phrases = [
+      'Fully shaded route',
+      'Shade throughout the journey',
+      'No direct sun detected',
+    ];
+  }
+
+  return phrases[variantIndex % phrases.length];
 }
 
-function gradeRoute(sunPercent) {
-  if (sunPercent >= 75) return '☀  Excellent';
-  if (sunPercent >= 55) return '⛅ Good';
-  if (sunPercent >= 35) return '🌤 Moderate';
-  return '☁  Mostly shaded';
-}
+
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -198,8 +236,9 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   }, []);
 
   const handleScores = useCallback((results) => {
+    const phraseOffset = Math.floor(Math.random()*3);
     setRoutes(prev => {
-      const updated = prev.map(route => {
+      const updated = prev.map((route, routeIndex) => {
         const match = results.find(r => r.routeId === route.id);
         if (!match) return route;
         const finalPercent = Math.round((match.sunPercent ?? 0) * 10) / 10;
@@ -209,8 +248,11 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
           sunny_km:    Math.round(route.distance_km * finalPercent / 100 * 10) / 10,
           segments:     match.segments,
           score:        finalPercent,
-          grade:        gradeRoute(finalPercent),
-          description:  describeRoute(finalPercent, departure_at),
+          description:  describeRoute(
+            finalPercent,
+            departure_at,
+            routeIndex + phraseOffset
+          ),
         };
       });
 
