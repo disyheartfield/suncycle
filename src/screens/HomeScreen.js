@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity,
+  TouchableWithoutFeedback, Keyboard,
   StyleSheet, Animated, KeyboardAvoidingView,
   Platform, StatusBar, ActivityIndicator, Modal,
 } from "react-native";
@@ -50,6 +51,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const openPicker = () => {
+    Keyboard.dismiss();
     const current = new Date();
     setPickerHour(hasCustomTime ? departureHour : current.getHours());
     setPickerMin(hasCustomTime ? departureMin : current.getMinutes());
@@ -74,6 +76,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleSearch = async () => {
+    Keyboard.dismiss();
     if (!start.trim() || !end.trim()) {
       setError("Enter both postcodes to find your sunniest route");
       return;
@@ -104,6 +107,7 @@ export default function HomeScreen({ navigation }) {
   const MINS  = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
   return (
+    <TouchableWithoutFeedback onPress ={Keyboard.dismiss} accessible={false} >
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -142,7 +146,14 @@ export default function HomeScreen({ navigation }) {
         {/* Swap divider */}
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
-          <TouchableOpacity style={styles.swapBtn} onPress={() => { setStart(end); setEnd(start); }}>
+          <TouchableOpacity
+            style={styles.swapBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              setStart(end);
+              setEnd(start);
+            }}
+          >
             <Text style={styles.swapIcon}>⇅</Text>
           </TouchableOpacity>
           <View style={styles.dividerLine} />
@@ -195,17 +206,25 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.ctaText}>Find Sunniest Route ☀</Text>
           )}
         </TouchableOpacity>
-      </Animated.View>
+            </Animated.View>
 
       {/* Quick tries */}
       <View style={styles.quickTries}>
         <Text style={styles.quickLabel}>Try</Text>
-        {[["N19 3DA", "SE1 7PB"], ["EC1A 1BB", "SE1 7PB"]].map(([s, e]) => (
-          <TouchableOpacity key={s} style={styles.quickBtn} onPress={() => { setStart(s); setEnd(e); }}>
-            <Text style={styles.quickText}>{s} → {e}</Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity
+          style={styles.quickBtn}
+          onPress={() => {
+            Keyboard.dismiss();
+            setStart("NW1 0LU");
+            setEnd("SW1A 0AA");
+          }}
+        >
+          <Text style={styles.quickText}>
+            NW1 0LU → SW1A 0AA
+          </Text>
+        </TouchableOpacity>
       </View>
+
 
       {/* Time picker modal */}
       <Modal visible={showTimePicker} transparent animationType="slide">
@@ -278,6 +297,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Modal>
     </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
