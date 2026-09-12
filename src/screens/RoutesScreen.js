@@ -134,6 +134,9 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   } = useFollowRoute();
 
   const isFollowing = followState === 'following';
+  useEffect(() => {
+    return navigation.addListener('blur', endFollowing);
+  }, [navigation, endFollowing]);
 
   // Prevent accidental route changes once following has started
   const handleSelectRoute = (idx) => {
@@ -144,7 +147,6 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
 
   const mapRef       = useRef(null);
   const sheetAnim    = useRef(new Animated.Value(SHEET_FULL)).current;
-  const mapAnim      = useRef(new Animated.Value(SCREEN_H * 0.45)).current;
   const entranceY    = useRef(new Animated.Value(300)).current;
   const entranceOp   = useRef(new Animated.Value(0)).current;
   const hasCentred   = useRef(false);  // set when we auto-frame on follow start
@@ -169,11 +171,11 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
     );
     if (coords.length) {
       setTimeout(() => mapRef.current?.fitToCoordinates(coords, {
-        edgePadding: { top: 60, right: 40, bottom: sheetExpanded ? 60 : 20, left: 40 },
+        edgePadding: { top: 60, right: 40, bottom: 60, left: 40 },
         animated: true,
       }), 100);
     }
-  }, [selected?.id, sheetExpanded, isFollowing]);
+  }, [selected?.id, isFollowing]);
 
   // ── Auto-frame on follow start ──────────────────────────────────────────────
 
@@ -203,14 +205,116 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
 
   // ── Bottom sheet toggle ─────────────────────────────────────────────────────
 
-  const toggleSheet = () => {
-    const expanding = !sheetExpanded;
-    setSheetExpanded(expanding);
-    Animated.parallel([
-      Animated.spring(sheetAnim, { toValue: expanding ? SHEET_FULL : SHEET_MINI, tension: 65, friction: 12, useNativeDriver: false }),
-      Animated.spring(mapAnim,   { toValue: expanding ? SCREEN_H * 0.45 : SCREEN_H - SHEET_MINI - 50, tension: 65, friction: 12, useNativeDriver: false }),
-    ]).start();
+  const currentSheetHeight = useRef(SHEET_FULL);
+  const sheetGesture = useRef(null);
+  const pinchStartDistance = useRef(null);
+
+  useEffect(() => {
+    const listener = sheetAnim.addListener(({ value }) => {
+      currentSheetHeight.current = value;
+    });
+
+    return () => sheetAnim.removeListener(listener);
+  }, [sheetAnim]);
+
+  const snapSheet = (expanded) => {
+    setSheetExpanded(expanded);
+
+    Animated.spring(sheetAnim, {
+      toValue: expanded ? SHEET_FULL : SHEET_MINI,
+      tension: 65,
+      friction: 12,
+      useNativeDriver: false,
+    }).start();
   };
+
+  const toggleSheet = () => {
+    snapSheet(!sheetExpanded);
+  };
+
+  const startSheetDrag = (event) => {
+    sheetAnim.stopAnimation();
+
+    sheetGesture.current = {
+      startY: event.nativeEvent.pageY,
+      startHeight: currentSheetHeight.current,
+      wasExpanded: sheetExpanded,
+      maxMovement: 0,
+    };
+
+    // Keep the cards visible as the panel is pulled open.
+    setSheetExpanded(true);
+  };
+
+  const moveSheetDrag = (event) => {
+    const gesture = sheetGesture.current;
+    if (!gesture) return;
+
+    const movement = event.nativeEvent.pageY - gesture.startY;
+
+    gesture.maxMovement = Math.max(
+      gesture.maxMovement,
+      Math.abs(movement)
+    );
+
+    const nextHeight = Math.max(
+      SHEET_MINI,
+      Math.min(SHEET_FULL, gesture.startHeight - movement)
+    );
+
+    currentSheetHeight.current = nextHeight;
+    sheetAnim.setValue(nextHeight);
+  };
+
+  const finishSheetDrag = () => {
+    const gesture = sheetGesture.current;
+    if (!gesture) return;
+
+    sheetGesture.current = null;
+
+    if (gesture.maxMovement < 8) {
+      // A tap switches between the two sizes.
+      snapSheet(!gesture.wasExpanded);
+    } else {
+      // A drag settles at the nearest size.
+      const midpoint = (SHEET_FULL + SHEET_MINI) / 2;
+      snapSheet(currentSheetHeight.current >= midpoint);
+    }
+  };
+
+  const cancelSheetDrag = () => {
+    const gesture = sheetGesture.current;
+    sheetGesture.current = null;
+
+    if (gesture) snapSheet(gesture.wasExpanded);
+  };
+
+  const observeMapPinch = (event) => {
+    const touches = event.nativeEvent.touches;
+
+    if (isFollowing || !sheetExpanded || touches.length !== 2) {
+      pinchStartDistance.current = null;
+      return false;
+    }
+
+    const [first, second] = touches;
+    const distance = Math.hypot(
+      first.pageX - second.pageX,
+      first.pageY - second.pageY
+    );
+
+    if (pinchStartDistance.current === null) {
+      pinchStartDistance.current = distance;
+    } else if (Math.abs(distance - pinchStartDistance.current) > 10) {
+      // Either zooming in or zooming out reveals more map.
+      snapSheet(false);
+      pinchStartDistance.current = null;
+    }
+
+    // Let the map continue handling the actual zoom gesture.
+    return false;
+  };
+
 
   // ── "Centre on me" ──────────────────────────────────────────────────────────
 
@@ -288,7 +392,18 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   
 
       {/* ── Map ── */}
-      <Animated.View style={[styles.mapWrap, { height: mapAnim }]}>
+      <Animated.View style={[styles.mapWrap, { flex: 1 }]}>
+        <View
+          style={StyleSheet.absoluteFill}
+          onStartShouldSetResponderCapture={observeMapPinch}
+          onMoveShouldSetResponderCapture={observeMapPinch}
+          onTouchEnd={() => {
+            pinchStartDistance.current = null ;
+          }}
+          onTouchCancel={()=> {
+            pinchStartDistance.current = null;
+          }}
+        >
         <MapView
           ref={mapRef}
           style={StyleSheet.absoluteFill}
@@ -296,11 +411,25 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
           userInterfaceStyle="dark"
           showsUserLocation={isFollowing}
           followsUserLocation={false}
-          onUserLocationChange={(e)=>{
-            if (isFollowing){
-              setUserLocation(e.nativeEvent.coordinate);
+          onUserLocationChange={(e) => {
+            const coordinate = e.nativeEvent.coordinate;
+          
+            if (!isFollowing || !coordinate) return;
+          
+            const { latitude, longitude } = coordinate;
+          
+            if (
+              !Number.isFinite(latitude) ||
+              !Number.isFinite(longitude) ||
+              Math.abs(latitude) > 90 ||
+              Math.abs(longitude) > 180
+            ) {
+              return;
             }
+          
+            setUserLocation(coordinate);
           }}
+
           showsCompass={false}
           showsScale={false}
           initialRegion={{
@@ -348,6 +477,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
             </View>
           </Marker>
         </MapView>
+        </View>
 
         {/* Back button */}
         <TouchableOpacity
@@ -373,7 +503,12 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
           <View style={styles.followingBanner} accessibilityLiveRegion="polite">
             <Text style={styles.followingBannerTitle}>Following sunny route</Text>
             <Text style={styles.followingBannerSub}>
-              Shows your position and phone direction · No turn directions
+              {!userLocation
+                ? 'Finding your location…'
+                : Number.isFinite(userLocation.accuracy) &&
+                    userLocation.accuracy >= 0
+                  ? `Location accuracy: about ±${Math.round(userLocation.accuracy)} m`
+                  : 'Location received · Accuracy unavailable'}
             </Text>
           </View>
         )}
@@ -429,17 +564,29 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
       >
         {/* Sheet handle — hidden while following */}
         {!isFollowing && (
-          <TouchableOpacity
+          <View
             style={styles.handleArea}
-            onPress={toggleSheet}
-            accessibilityLabel={sheetExpanded ? 'Show full-screen map' : 'Show route options'}
+            accessible
             accessibilityRole="button"
+            accessibilityLabel={
+              sheetExpanded ? 'Expand map' : 'Show route options'
+            }
+            accessibilityHint="Double tap to change the panel size"
+            accessibilityActions={[{ name: 'activate' }]}
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === 'activate') {
+                toggleSheet();
+              }
+            }}
+            onStartShouldSetResponder={() => true}
+            onResponderGrant={startSheetDrag}
+            onResponderMove={moveSheetDrag}
+            onResponderRelease={finishSheetDrag}
+            onResponderTerminationRequest={() => false}
+            onResponderTerminate={cancelSheetDrag}
           >
             <View style={styles.handle} />
-            <Text style={styles.handleHint}>
-              {sheetExpanded ? '▼  full screen map' : '▲  show routes'}
-            </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
         {/* ── Active following bar ── */}
@@ -751,11 +898,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingHorizontal: spacing.lg,
   },
-
-  handleArea: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.xs },
-  handle:     { width: 36, height: 4, backgroundColor: colours.border, borderRadius: 2, marginBottom: 4 },
-  handleHint: { color: colours.textTertiary, fontSize: 11, letterSpacing: 0.3 },
-
+  handleArea: {
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  handle: {
+    width: 40,
+    height: 5,
+    backgroundColor: colours.border,
+    borderRadius: 3,
+  },
   // ── Following bar ──
   followingBar: {
     flexDirection: 'row', alignItems: 'center',
