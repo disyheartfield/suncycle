@@ -111,7 +111,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const [routes, setRoutes]           = useState(initialRoutes);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const [isReady, setIsReady] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
   // ── ShadeMap shadow-scoring state ───────────────────────────────────────────
@@ -165,17 +165,18 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const selected = routes[selectedIdx];
 
   useEffect(() => {
-    if (!mapRef.current || !selected?.segments?.length || isFollowing) return;
+    if (!mapReady || !mapRef.current || !selected?.segments?.length || isFollowing) return;
     const coords = selected.segments.flatMap(seg =>
       seg.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }))
     );
     if (coords.length) {
-      setTimeout(() => mapRef.current?.fitToCoordinates(coords, {
+      const timer = setTimeout(() => mapRef.current?.fitToCoordinates(coords, {
         edgePadding: { top: 60, right: 40, bottom: 60, left: 40 },
         animated: true,
       }), 100);
+      return () => clearTimeout(timer);
     }
-  }, [selected?.id, isFollowing]);
+  }, [selected?.id, isFollowing, mapReady]);
 
   // ── Auto-frame on follow start ──────────────────────────────────────────────
 
@@ -340,12 +341,35 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   }, []);
 
   const handleScores = useCallback((results) => {
+    // Never present missing or partial ShadeMap results as 0% sunlight.
+    const complete = Array.isArray(results) && initialRoutes.length > 0 &&
+      initialRoutes.every(route => {
+        const matches = results.filter(result => result?.routeId === route.id);
+        const result = matches[0];
+        return matches.length === 1 && Number.isFinite(result.sunPercent) &&
+          result.sunPercent >= 0 && result.sunPercent <= 100 &&
+          Array.isArray(result.segments) && result.segments.length > 0 &&
+          result.segments.every(segment =>
+            typeof segment.in_sun === 'boolean' &&
+            Array.isArray(segment.coordinates) && segment.coordinates.length > 0 &&
+            segment.coordinates.every(point =>
+              Array.isArray(point) && point.length >= 2 &&
+              Number.isFinite(point[0]) && Number.isFinite(point[1]) &&
+              Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90
+            )
+          );
+      });
+    if (!complete) {
+      setShadingStatus('error');
+      setShadingMessage('The sunlight calculation returned incomplete results. Please try again.');
+      return;
+    }
     const phraseOffset = Math.floor(Math.random()*3);
     setRoutes(prev => {
       const updated = prev.map((route, routeIndex) => {
         const match = results.find(r => r.routeId === route.id);
         if (!match) return route;
-        const finalPercent = Math.round((match.sunPercent ?? 0) * 10) / 10;
+        const finalPercent = Math.round(match.sunPercent * 10) / 10;
         return {
           ...route,
           sun_percent: finalPercent,
@@ -371,14 +395,12 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         .sort((a, b) => b.sun_percent - a.sun_percent || a.duration_min - b.duration_min);
     });
 
-    setShadingStatus('done')
-    setIsReady(true); 
-  }, [departure_at]);
+    setShadingStatus('done');
+  }, [departure_at, initialRoutes]);
 
   const handleShadingError = useCallback((err) => {
     setShadingStatus('error');
     setShadingMessage(String(err));
-    setIsReady(true) ; 
   }, []);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -386,6 +408,50 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
   const scoreColour = sunScoreColour(selected?.sun_percent ?? 0);
 
   // ── Render ──────────────────────────────────────────────────────────────────
+
+  // The backend supplies unscored geometry. Only render score cards after
+  // ShadeMap has successfully scored every route.
+  if (shadingStatus !== 'done') {
+    if (shadingStatus === 'error' || !initialRoutes.length) {
+      return (
+        <View style={[styles.screen, { justifyContent: 'center', padding: spacing.lg }]}>
+          <Text style={styles.modalTitle}>Sunlight results unavailable</Text>
+          <Text style={styles.modalBody}>
+            {shadingMessage || 'No routes were returned. Please try another search.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.followBtn}
+            onPress={() => { endFollowing(); navigation.goBack(); }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.followBtnLabel}>Back to search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.screen}>
+        <ShadingWebView
+          routes={initialRoutes}
+          departureAt={departure_at}
+          onProgress={handleProgress}
+          onScores={handleScores}
+          onError={handleShadingError}
+        />
+        <Modal visible transparent statusBarTranslucent onRequestClose={() => navigation.goBack()}>
+          <LoadingScreen progress={loadingProgress} message={shadingMessage} />
+          <TouchableOpacity
+            style={[styles.backBtn, { top: 60 }]}
+            onPress={() => navigation.goBack()}
+            accessibilityLabel="Cancel and go back"
+            accessibilityRole="button"
+          >
+            <Text style={styles.backIcon}>←</Text>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -406,6 +472,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         >
         <MapView
           ref={mapRef}
+          onMapReady={() => setMapReady(true)}
           style={StyleSheet.absoluteFill}
           mapType="mutedStandard"
           userInterfaceStyle="dark"
@@ -653,17 +720,6 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         )}
       </Animated.View>
 
-      {/* ── Hidden ShadeMap WebView (shadow scoring) ── */}
-      {routes && shadingStatus !== 'done' && shadingStatus !== 'error' && (
-        <ShadingWebView
-          routes={routes}
-          departureAt={departure_at}
-          onProgress={handleProgress}
-          onScores={handleScores}
-          onError={handleShadingError}
-        />
-      )}
-
       {/* ── Permission rationale modal ── */}
       <Modal
         visible={followState === 'requesting_rationale'}
@@ -787,12 +843,7 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         </View>
       </Modal>
 
-      <Modal visible={!isReady} transparent statusBarTranslucent>
-        <LoadingScreen
-          progress={loadingProgress}
-          message={shadingMessage}
-        />
-      </Modal>
+
 
     </View>
   );
