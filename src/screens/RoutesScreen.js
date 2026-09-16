@@ -687,8 +687,8 @@ export default function RoutesScreen({ route: navRoute, navigation }) {
         {!isFollowing && sheetExpanded && (
           <>
             <View style={styles.sheetHeader}>
-              <View>
-                <Text style={styles.routeFrom}>{start} → {end}</Text>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.routeFrom} numberOfLines={2}>{start} → {end}</Text>
                 <Text style={styles.routeSub}>{routes.length} routes · sunniest first</Text>
               </View>
               {selected && (

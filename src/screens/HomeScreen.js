@@ -1,16 +1,34 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, ScrollView, Linking, TouchableOpacity,
   TouchableWithoutFeedback, Keyboard,
   StyleSheet, Animated, KeyboardAvoidingView,
   Platform, StatusBar, ActivityIndicator, Modal,
 } from "react-native";
 import { colours, radius, spacing } from "../theme";
-import { fetchRoutes, APIError } from "../api";
+import { fetchRoutes, resolveLocation, APIError } from "../api";
+import AddressSearchInput from "../components/AddressSearchInput";
 
 export default function HomeScreen({ navigation }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [startPlace, setStartPlace] = useState(null);
+  const [endPlace, setEndPlace] = useState(null);
+  const [activeField, setActiveField] = useState(null);
+  const startInput = useRef(null);
+  const endInput = useRef(null);
+  const searchRequest = useRef(null);
+
+  const dismissKeyboard = () => {
+    setActiveField(null);
+    Keyboard.dismiss();
+  };
+
+  useEffect(() => {
+    return () => {
+      searchRequest.current?.abort();
+    };
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -51,7 +69,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const openPicker = () => {
-    Keyboard.dismiss();
+    dismissKeyboard();
     const current = new Date();
     setPickerHour(hasCustomTime ? departureHour : current.getHours());
     setPickerMin(hasCustomTime ? departureMin : current.getMinutes());
@@ -76,26 +94,45 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleSearch = async () => {
-    Keyboard.dismiss();
+    if (searchRequest.current) return;
+    dismissKeyboard();
     if (!start.trim() || !end.trim()) {
-      setError("Enter both postcodes to find your sunniest route");
+      setError("Enter both locations to find your sunniest route");
       return;
     }
+    // Capture Now before any address lookups, not after they finish.
+    const departure = buildDepartureAt();
+    const controller = new AbortController();
+    searchRequest.current = controller;
     setError(null);
     setLoading(true);
-    try {
-      const data = await fetchRoutes(start, end, buildDepartureAt());
-      navigation.navigate("Routes", { data, start, end });
-    } catch (e) {
-      if (e instanceof APIError) {
-        setError(e.message);
-      } else if (e.message?.includes("Network")) {
-        setError("Can't reach the server — is it running?");
-      } else {
-        setError(e.message || "Something went wrong");
+    const resolve = async (text, selected, field) => {
+      try {
+        return await resolveLocation(text, selected, { signal: controller.signal });
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        throw new APIError(`${field}: ${error.message}`, error.status);
       }
+    };
+    try {
+      const [from, to] = await Promise.all([
+        resolve(start, startPlace, "From"), resolve(end, endPlace, "To"),
+      ]);
+      if (controller.signal.aborted) return;
+      setStart(from.label);
+      setStartPlace(from);
+      setEnd(to.label);
+      setEndPlace(to);
+      const data = await fetchRoutes(from, to, departure, { signal: controller.signal });
+      if (!controller.signal.aborted) {
+        navigation.navigate("Routes", { data, start: from.title, end: to.title });
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setError(error.message || "Something went wrong");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
+      controller.abort();
+      if (searchRequest.current === controller) searchRequest.current = null;
     }
   };
 
@@ -107,13 +144,19 @@ export default function HomeScreen({ navigation }) {
   const MINS  = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
   return (
-    <TouchableWithoutFeedback onPress ={Keyboard.dismiss} accessible={false} >
+    <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <StatusBar barStyle="light-content" />
-      <View style={styles.bgGlow} />
+      <View style={styles.bgGlow} pointerEvents="none" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
 
       {/* Header */}
       <Animated.View style={[styles.header, { opacity: titleOpacity, transform: [{ translateY: titleY }] }]}>
@@ -125,33 +168,46 @@ export default function HomeScreen({ navigation }) {
       {/* Search card */}
       <Animated.View style={[styles.card, { opacity: cardOpacity, transform: [{ translateY: cardAnim }] }]}>
 
-        {/* From */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>FROM</Text>
-          <View style={styles.inputRow}>
-            <View style={[styles.dot, styles.dotFrom]} />
-            <TextInput
-              style={styles.input}
-              placeholder="Start postcode"
-              placeholderTextColor={colours.textTertiary}
-              value={start}
-              onChangeText={setStart}
-              autoCapitalize="characters"
-              returnKeyType="next"
-              autoCorrect={false}
-            />
-          </View>
-        </View>
+        <AddressSearchInput
+          ref={startInput}
+          label="FROM"
+          value={start}
+          selected={startPlace}
+          active={activeField === "start"}
+          disabled={loading}
+          dotColour={colours.sun}
+          onFocus={() => setActiveField("start")}
+          onChangeText={text => {
+            setStart(text);
+            setStartPlace(null);
+            setActiveField("start");
+            setError(null);
+          }}
+          onSelect={place => {
+            setStart(place.label);
+            setStartPlace(place);
+            setError(null);
+            dismissKeyboard();
+          }}
+          returnKeyType="next"
+          onSubmitEditing={() => endInput.current?.focus()}
+        />
 
         {/* Swap divider */}
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
           <TouchableOpacity
             style={styles.swapBtn}
+            disabled={loading}
+            accessibilityLabel="Swap start and destination"
+            accessibilityRole="button"
             onPress={() => {
-              Keyboard.dismiss();
+              dismissKeyboard();
               setStart(end);
               setEnd(start);
+              setStartPlace(endPlace);
+              setEndPlace(startPlace);
+              setError(null);
             }}
           >
             <Text style={styles.swapIcon}>⇅</Text>
@@ -159,29 +215,35 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.dividerLine} />
         </View>
 
-        {/* To */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>TO</Text>
-          <View style={styles.inputRow}>
-            <View style={[styles.dot, styles.dotTo]} />
-            <TextInput
-              style={styles.input}
-              placeholder="End postcode"
-              placeholderTextColor={colours.textTertiary}
-              value={end}
-              onChangeText={setEnd}
-              autoCapitalize="characters"
-              returnKeyType="search"
-              onSubmitEditing={handleSearch}
-              autoCorrect={false}
-            />
-          </View>
-        </View>
+        <AddressSearchInput
+          ref={endInput}
+          label="TO"
+          value={end}
+          selected={endPlace}
+          active={activeField === "end"}
+          disabled={loading}
+          dotColour={colours.shade}
+          onFocus={() => setActiveField("end")}
+          onChangeText={text => {
+            setEnd(text);
+            setEndPlace(null);
+            setActiveField("end");
+            setError(null);
+          }}
+          onSelect={place => {
+            setEnd(place.label);
+            setEndPlace(place);
+            setError(null);
+            dismissKeyboard();
+          }}
+          returnKeyType="search"
+          onSubmitEditing={handleSearch}
+        />
 
         {/* Departure time */}
         <View style={styles.timeRow}>
           <Text style={styles.timeLabel}>DEPART</Text>
-          <TouchableOpacity style={styles.timeBtn} onPress={openPicker}>
+          <TouchableOpacity style={styles.timeBtn} onPress={openPicker} disabled={loading}>
             <Text style={styles.timeBtnIcon}>🕐</Text>
             <Text style={styles.timeBtnText}>{departureLabel()}</Text>
             <Text style={styles.timeBtnChevron}>›</Text>
@@ -213,10 +275,14 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.quickLabel}>Try</Text>
         <TouchableOpacity
           style={styles.quickBtn}
+          disabled={loading}
           onPress={() => {
-            Keyboard.dismiss();
+            dismissKeyboard();
             setStart("NW1 0LU");
             setEnd("SW1A 0AA");
+            setStartPlace(null);
+            setEndPlace(null);
+            setError(null);
           }}
         >
           <Text style={styles.quickText}>
@@ -226,8 +292,30 @@ export default function HomeScreen({ navigation }) {
       </View>
 
 
+      <Text style={styles.searchHint}>
+        Search UK places. Add a town or street to narrow the suggestions.
+        Choose a suggestion, or enter a full postcode and press Search.
+      </Text>
+      <View style={styles.attribution}>
+        <TouchableOpacity
+          onPress={() => Linking.openURL("https://www.geoapify.com/").catch(() => {})}
+          accessibilityRole="link"
+          style={styles.attributionLink}
+        >
+          <Text style={styles.attributionText}>Powered by Geoapify</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => Linking.openURL("https://www.openstreetmap.org/copyright").catch(() => {})}
+          accessibilityRole="link"
+          style={styles.attributionLink}
+        >
+          <Text style={styles.attributionText}>© OpenStreetMap contributors</Text>
+        </TouchableOpacity>
+      </View>
+      </ScrollView>
+
       {/* Time picker modal */}
-      <Modal visible={showTimePicker} transparent animationType="slide">
+      <Modal visible={showTimePicker} transparent animationType="slide" onRequestClose={() => setShowTimePicker(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Departure time</Text>
@@ -302,20 +390,18 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colours.bg, paddingHorizontal: spacing.lg, paddingTop: 80 },
+  container: { flex: 1, backgroundColor: colours.bg },
+  content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: 72, paddingBottom: 40 },
+  searchHint: { color: colours.textSecondary, fontSize: 12, lineHeight: 18, marginTop: spacing.md },
+  attribution: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.md },
+  attributionLink: { minHeight: 44, justifyContent: "center" },
+  attributionText: { color: colours.textSecondary, fontSize: 11 },
   bgGlow: { position: "absolute", top: -100, left: "25%", width: 200, height: 200, borderRadius: 100, backgroundColor: colours.sun, opacity: 0.04 },
   header: { alignItems: "center", marginBottom: spacing.xl },
   logoMark: { fontSize: 40, marginBottom: spacing.xs },
   logoText: { fontSize: 32, fontFamily: "Georgia", fontWeight: "700", color: colours.textPrimary, letterSpacing: -1 },
   tagline: { fontSize: 15, color: colours.textSecondary, marginTop: spacing.xs },
   card: { backgroundColor: colours.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colours.border, padding: spacing.lg },
-  inputGroup: { gap: spacing.xs },
-  inputLabel: { fontSize: 10, fontWeight: "600", color: colours.textTertiary, letterSpacing: 1.2 },
-  inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  dotFrom: { backgroundColor: colours.sun },
-  dotTo: { backgroundColor: colours.shade },
-  input: { flex: 1, fontSize: 18, fontWeight: "500", color: colours.textPrimary, paddingVertical: spacing.sm, letterSpacing: 0.5 },
   dividerRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm, gap: spacing.sm },
   dividerLine: { flex: 1, height: 1, backgroundColor: colours.border },
   swapBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colours.bgElevated, borderWidth: 1, borderColor: colours.border, alignItems: "center", justifyContent: "center" },
