@@ -1,97 +1,85 @@
 # ☀️ SunCycle
 
-SunCycle compares cycling routes between two UK postcodes and estimates how much of each route will be in direct sunlight at the time you leave.
+SunCycle compares up to three cycling routes and estimates how much of each route will be in direct sunlight at your selected departure time. Sunny sections appear yellow and shaded sections blue. It is a development prototype, not a production navigation app.
 
-Choose a departure time, compare up to three cycling routes, and see sunny sections in yellow and shaded sections in blue.
-
-> **Current status:** SunCycle is a working development prototype. It is not yet a production navigation app.
-
-## What SunCycle does
-
-1. Converts two UK postcodes into coordinates.
-2. Requests up to three cycling routes from GraphHopper.
-3. Checks the routes against building and terrain shadows at the selected departure time.
-4. Ranks the routes by their estimated percentage of direct sunlight.
-5. Displays sunny sections in yellow and shaded sections in blue.
+The Expo / React Native app and FastAPI backend now live in this one repository. Keep all local credentials and the backend address in **one root `.env`**, copied from `.env.example`. There is no `src/config.js` to create or edit.
 
 ## What you need
 
-Install the following before starting:
+- Node.js 20.19+ and npm ([Expo SDK 56 requirements](https://docs.expo.dev/versions/v56.0.0/)).
+- Python 3.10+ (the existing backend uses Python 3.10 type syntax).
+- Xcode 26.4+ on macOS for iOS Simulator; Android Studio / Android SDK for Android.
+- Git or GitHub Desktop and internet access.
+- [GraphHopper key](https://graphhopper.com/dashboard/), [Geoapify key](https://myprojects.geoapify.com/), [Mapbox public token](https://account.mapbox.com/access-tokens/) starting with `pk.`, and a [ShadeMap browser API key](https://shademap.app/).
 
-- [Node.js](https://nodejs.org/) and npm
-- [Python 3.9 or newer](https://www.python.org/downloads/)
-- [Xcode](https://developer.apple.com/xcode/) to use the iOS Simulator
-- Git, or [GitHub Desktop](https://desktop.github.com/)
+## First-time setup
 
-Create three development API credentials:
+Download or clone this combined repository. Open a terminal in the **main project folder**: the folder containing `package.json`, `.env.example` and `backend/`. Run the commands below from that folder, not from inside `backend/`.
 
-1. A [Mapbox public access token](https://account.mapbox.com/access-tokens/)
-2. A [ShadeMap API key](https://shademap.app/about/)
-3. A [GraphHopper API key](https://graphhopper.com/dashboard/)
+The commands below use macOS/Linux terminal syntax. Building for iOS requires macOS and Xcode.
 
-You need both repositories:
+### 1. Add your API credentials
 
-- Frontend: <https://github.com/disyheartfield/suncycle>
-- Backend: <https://github.com/disyheartfield/suncycle-backend>
-
-## Setup
-
-The easiest setup uses two Terminal windows: one for the Python backend and one for the Expo app.
-
-### 1. Download both repositories
-
-You can clone them with Git:
+If you do not already have a root `.env`, create it from the template:
 
 ```bash
-git clone https://github.com/disyheartfield/suncycle.git
-git clone https://github.com/disyheartfield/suncycle-backend.git
+cp .env.example .env
 ```
 
-Alternatively, clone both repositories using GitHub Desktop.
+If `.env` already exists, keep it; do not overwrite your existing credentials.
 
-API-key files are deliberately excluded from GitHub, so cloning the repositories will not download anyone else's credentials.
+Open `.env` in your editor and fill in:
 
-### 2. Set up the backend
+- `GRAPHHOPPER_API_KEY` — your GraphHopper key.
+- `GEOAPIFY_API_KEY` — your Geoapify key.
+- `EXPO_PUBLIC_MAPBOX_TOKEN` — your Mapbox public token, starting with `pk.`.
+- `EXPO_PUBLIC_SHADEMAP_KEY` — your ShadeMap browser API key.
 
-Open Terminal inside the `suncycle-backend` folder:
+The provider links are listed under **What you need** above. For iOS Simulator, leave:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://127.0.0.1:8001
+```
+
+For a phone or Android emulator, use the address described under **Simulator and device addresses** below. All personal configuration goes in this one root `.env`; keep `.env.example` free of real credentials. There is no need to edit JavaScript or Python files to enter your keys or IP address.
+
+### 2. Install the frontend dependencies
 
 ```bash
-cd suncycle-backend
+npm ci
+```
+
+### 3. Create the Python environment and install the backend dependencies
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install fastapi uvicorn requests shapely suncalc colorama python-dotenv
+python3 -m pip install fastapi uvicorn requests shapely suncalc python-dotenv numpy
 ```
 
-Create a new plain-text file inside `suncycle-backend` named exactly:
+`.venv` holds this project's Python packages, including Uvicorn. After activation, your terminal will usually show `(.venv)` before the prompt. If your editor asks whether to select the newly created environment for this workspace, choose **Yes**.
 
-```text
-.env
-```
+On Windows PowerShell, use `python` if `python3` is unavailable, and activate the environment with `.\.venv\Scripts\Activate.ps1` instead.
 
-Add your GraphHopper key:
+### 4. Start the backend
 
-```text
-GRAPHHOPPER_API_KEY=your_graphhopper_key_here
-```
-
-Do not add quotation marks. Save the file.
-
-The `.env` file is listed in `.gitignore`. It should not appear in GitHub Desktop, and it should never be committed.
-
-Start the backend:
+In the same terminal, with `.venv` active, run:
 
 ```bash
-python3 -m uvicorn server:app --reload --host 0.0.0.0 --port 8001
+python3 -m uvicorn backend.server:app --reload --host 0.0.0.0 --port 8001
 ```
 
-Leave this Terminal window running. Wait until it says:
+Wait for:
 
 ```text
 Application startup complete.
 ```
 
-In a second Terminal window, check that the backend is reachable:
+Keep this terminal running while using the app.
+
+### 5. Start the frontend
+
+Open a **second terminal** in the same main project folder. Check that the backend is reachable:
 
 ```bash
 curl http://127.0.0.1:8001/health
@@ -103,85 +91,52 @@ Expected response:
 {"status":"ok","service":"SunCycle API"}
 ```
 
-### 3. Set up the frontend
-
-Open another Terminal window inside the `suncycle` frontend folder:
+For the first iOS Simulator build, run:
 
 ```bash
-cd suncycle
-npm install
+npm run ios
 ```
 
-Create a new file inside the frontend's `src` folder named:
+For Android, use `npm run android` instead. The first native build, including installation of iOS dependencies through CocoaPods, can take several minutes. If you already have a compatible development version of the app installed, use the frontend command in **Starting the app again** below.
 
-```text
-config.js
-```
+### 6. Try a route
 
-Add your Mapbox and ShadeMap credentials:
+Select a starting location and destination, choose **Now** or a departure time today, and press **Find Sunniest Route**. Compare the routes and their sunlight colouring. Initial requests can be slower while routing, building and shadow data load.
 
-```js
-export const MAPBOX_TOKEN = "your_mapbox_public_token";
-export const SHADEMAP_KEY = "your_shademap_api_key";
-```
+## Starting the app again
 
-Save the file. `src/config.js` is listed in `.gitignore` and should never be committed.
+Open two terminals in the main project folder.
 
-### 4. Start the app
-
-For the iOS Simulator, run:
+**Terminal 1 — activate the Python environment and start the backend:**
 
 ```bash
-npx expo run:ios
+source .venv/bin/activate
+python3 -m uvicorn backend.server:app --reload --host 0.0.0.0 --port 8001
 ```
 
-The first native build can take several minutes. For later JavaScript-only sessions, you can normally use:
+**Terminal 2 — start Expo:**
 
 ```bash
 npx expo start --clear
 ```
 
-Then press `i` to open the iOS Simulator.
+Press `i` for iOS Simulator or `a` for Android, or open your installed development app. Keep both terminals running. Press **Ctrl+C** in each terminal when finished.
 
-Keep the backend Terminal running while using the app.
+You do not need to recreate `.venv` or reinstall dependencies for every session. Install dependencies again when their requirements change. A new native build is needed when native dependencies or native configuration change; JavaScript-only edits and changes to these `.env` values do not require one.
 
-### 5. Try a route
+After changing `.env`, restart the backend and Expo and fully reload the app. Existing shell environment variables take precedence; unset stale values if changes seem ignored. Keep configuration in `.env` rather than adding `.env.local` overrides.
 
-1. Enter two UK postcodes.
-2. Leave departure set to **Now**, or choose a time today.
-3. Press **Find Sunniest Route**.
-4. Wait while SunCycle obtains and scores the route alternatives.
+## Simulator and device addresses
 
-The first request may be slower while routing, building and shadow data load.
+Change only `EXPO_PUBLIC_API_URL` in the root `.env`:
 
-## Testing on a physical iPhone
+| Target | Value |
+| --- | --- |
+| iOS Simulator on this Mac | `http://127.0.0.1:8001` |
+| Standard Android emulator | `http://10.0.2.2:8001` |
+| Physical iPhone or Android | `http://YOUR_MAC_WIFI_IP:8001` |
 
-The frontend uses this backend address by default:
-
-```js
-const BASE_URL = "http://127.0.0.1:8001";
-```
-
-This works in the iOS Simulator. On a physical iPhone, `127.0.0.1` means the iPhone itself rather than your Mac.
-
-To test on a phone:
-
-1. Connect the Mac and iPhone to the same Wi-Fi network.
-2. Find the Mac's local Wi-Fi address:
-
-   ```bash
-   ipconfig getifaddr en0
-   ```
-
-3. Temporarily update `BASE_URL` in `src/api.js`, for example:
-
-   ```js
-   const BASE_URL = "http://local_ip_address_here:8001";
-   ```
-
-4. Start the backend with `--host 0.0.0.0` as shown above.
-
-Avoid committing a temporary private-network address unless it is an intentional project configuration.
+For a phone, use the Mac's current Wi-Fi IP (`ipconfig getifaddr en0` commonly shows it), keep port **8001**, and connect both devices to a network where they can reach each other. Keep Uvicorn bound to `0.0.0.0` and allow local access through the firewall. A physical iOS build also needs device signing setup (`npx expo run:ios --device`). `127.0.0.1` on a phone means the phone itself.
 
 ## How the sunlight percentage is calculated
 
@@ -201,7 +156,7 @@ The result is an estimate of direct sunlight along the route centreline. It is n
 
 ## Current limitations
 
-- UK postcode lookup only.
+- Location search is limited to Great Britain (UK postcodes, streets and addresses via Geoapify).
 - SunCycle compares GraphHopper's alternative routes; it does not search every possible street combination for a mathematically optimal sunny route.
 - A selected time applies to today. There is not yet a separate date picker.
 - Every route point is evaluated at the chosen departure time. The calculation does not yet advance the time as the cyclist travels.
@@ -210,96 +165,49 @@ The result is an estimate of direct sunlight along the route centreline. It is n
 - Follow mode displays position and phone direction but is not turn-by-turn navigation and does not reroute.
 - The app requires an internet connection and access to its external services.
 
-## Project structure
-
-### Frontend
+## Project structure and configuration
 
 ```text
+.env.example              # The one template; copy to ignored .env
+README.md                 # Setup for both parts
+package.json              # Expo app and startup scripts
+App.js
 src/
-├── api.js                         # Communicates with the FastAPI backend
-├── config.js                      # Local Mapbox and ShadeMap credentials
-├── components/
-│   └── ShadingWebView.js          # Performs ShadeMap calculations
-└── screens/
-    ├── HomeScreen.js              # Postcodes and departure time
-    └── RoutesScreen.js            # Route ranking and coloured map
+  api.js                  # Reads EXPO_PUBLIC_API_URL
+  components/
+    ShadingWebView.js      # Reads the two public browser credentials
+  screens/
+backend/
+  server.py               # Loads ../.env using its own file location
+  routing.py              # Geoapify search and GraphHopper routes
+  solar.py                # Sun-position label
 ```
 
-### Backend
+Expo automatically loads the root `.env` because its project remains at the repository root, and inlines the three `EXPO_PUBLIC_*` values through direct `process.env.EXPO_PUBLIC_*` references ([Expo environment-variable documentation](https://docs.expo.dev/guides/environment-variables/)). No symlink, copy script, additional JavaScript dotenv dependency, or duplicated configuration file is needed. Python reads that same file regardless of the working directory. Deployment environments can also provide values directly.
 
-```text
-suncycle-backend/
-├── server.py                      # FastAPI endpoints and configuration
-├── routing.py                     # Postcode lookup and cycling routes
-├── scoring.py                     # Route scoring
-├── shadows.py                     # Building-shadow calculations
-├── solar.py                       # Solar position calculations
-└── .env                           # Local GraphHopper key; never committed
+Mapbox and ShadeMap browser credentials are public and included in the app; use provider restrictions appropriate to your app. GraphHopper and Geoapify keys stay backend-only and must never get an `EXPO_PUBLIC_` prefix. The ignored legacy `src/config.js` is no longer read. If a credential was previously exposed, revoke it; deleting a file does not remove Git history.
+
+The root `.gitignore` should include:
+
+```gitignore
+.env*
+!.env.example
+.venv/
 ```
 
-## Keeping API keys safe
-
-Never commit:
-
-```text
-suncycle/src/config.js
-suncycle-backend/.env
-```
-
-These files will not appear after cloning the repositories or moving to a new GitHub Desktop copy. This is intentional: create them locally in every new clone.
-
-If a key has appeared in a public repository, screenshot or error message, revoke it in the provider's dashboard and create a replacement. Removing it from the latest version of a file does not remove it from Git history.
+This keeps local credentials and the Python environment out of new commits while allowing the blank environment template to be shared. Ignore rules do not untrack files that were already committed.
 
 ## Troubleshooting
 
-### `GRAPHHOPPER_API_KEY is not configured`
-
-Confirm that `.env`:
-
-- is inside the backend folder beside `server.py`;
-- is named exactly `.env`, not `.env.txt`;
-- is saved as plain text; and
-- contains an active GraphHopper key.
-
-Check whether Python can load it without displaying the key:
-
-```bash
-python3 -c "from dotenv import load_dotenv; import os; load_dotenv(); print('Key loaded:', bool(os.getenv('GRAPHHOPPER_API_KEY')))"
-```
-
-The expected result is:
-
-```text
-Key loaded: True
-```
-
-Restart Uvicorn after creating or changing `.env`.
-
-### `401 Client Error: Unauthorized`
-
-The GraphHopper key is invalid or has been revoked. Update `.env` with an active key and restart the backend.
-
-### `curl` cannot connect to port 8001
-
-The backend is not running. Start Uvicorn and wait for `Application startup complete` before opening the app.
-
-### `externally-managed-environment`
-
-The Python virtual environment is not active. Do not use `--break-system-packages`. Activate `.venv` and run the installation command again.
-
-### The app works in Simulator but not on an iPhone
-
-Use the Mac's local Wi-Fi address in `src/api.js`, start Uvicorn with `--host 0.0.0.0`, and keep both devices on the same Wi-Fi network.
-
-### Native iOS warnings about haptics, keyboards or VectorKit
-
-The iOS Simulator can print native framework warnings even when the app works correctly. Investigate them only if there is a visible symptom such as a crash, missing map, missing route or failed ShadeMap calculation.
+- **`No module named uvicorn`:** activate the root environment with `source .venv/bin/activate`. If it is a fresh environment, run the dependency installation command in step 3, then start the backend again.
+- **`attempted relative import with no known parent package`:** run `python3 -m uvicorn backend.server:app --reload --host 0.0.0.0 --port 8001` from the main project folder. The backend uses package-relative imports, so use `backend.server:app` rather than `server:app --app-dir backend`.
+- **Missing GraphHopper or Geoapify key:** confirm `.env` is in the repository root, not `backend/`, is plain text, and is not named `.env.txt`. Fill the relevant value and restart Uvicorn. Geoapify is required for location search.
+- **401 / access refused:** check the relevant provider key and restrictions.
+- **Cannot connect to port 8001:** start the backend, wait for startup, and check `/health`. For a phone, recheck the Mac's IP and Wi-Fi reachability.
+- **`externally-managed-environment`:** activate `.venv` and reinstall; do not use `--break-system-packages`.
+- **Missing map or shadow calculation:** check the two public credentials and reload Expo after editing `.env`.
+- **iOS haptics / keyboard / VectorKit warnings:** investigate when accompanied by a visible failure, rather than treating every simulator warning as an app error.
 
 ## Technology
 
-- React Native and Expo SDK 56
-- Mapbox GL JS
-- ShadeMap (`mapbox-gl-shadow-simulator`)
-- GraphHopper Directions API
-- FastAPI and Uvicorn
-- postcodes.io
+React Native / Expo SDK 56, Mapbox GL JS, ShadeMap (`mapbox-gl-shadow-simulator`), GraphHopper, Geoapify, FastAPI and Uvicorn.

@@ -1,76 +1,108 @@
-// api.js — SunCycle backend client
-// Replace BASE_URL with your Mac's local IP when testing on a real phone
-// On simulator: localhost works fine
-
-const BASE_URL = "http://127.0.0.1:8001";
+// Set EXPO_PUBLIC_API_URL in the frontend .env for a real phone.
+// Or keep your existing working BASE_URL here. This URL is not an API key.
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export class APIError extends Error {
   constructor(message, status) {
     super(message);
+    this.name = "APIError";
     this.status = status;
   }
 }
 
-async function request(path, options = {}) {
+async function request(path, { signal, timeoutMs = 45000, ...options } = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1200000); // 60s — Overpass can be slow
+  let timedOut = false;
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel);
+  if (signal?.aborted) cancel();
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+    const response = await fetch(`${BASE_URL.replace(/\/$/, "")}${path}`, {
       ...options,
+      headers: { "Content-Type": "application/json", ...options.headers },
+      signal: controller.signal,
     });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new APIError(err.detail || "Request failed", res.status);
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = typeof data?.detail === "string"
+        ? data.detail
+        : "The server could not use these locations. Choose them again and retry.";
+      throw new APIError(message, response.status);
     }
-
-    return res.json();
-  } catch (e) {
-    clearTimeout(timeout);
-    if (e.name === "AbortError") {
-      throw new APIError("Request timed out — building data can take up to 60s", 408);
+    if (!data) throw new APIError("The server returned an unreadable response.", 502);
+    return data;
+  } catch (error) {
+    if (signal?.aborted) {
+      const cancelled = new Error("Request cancelled");
+      cancelled.name = "AbortError";
+      throw cancelled;
     }
-    throw e;
+    if (timedOut) throw new APIError("The request timed out. Please try again.", 408);
+    if (error instanceof APIError) throw error;
+    throw new APIError("Can't reach the server. Check it is running and the backend URL is correct.", 0);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
   }
 }
 
-/**
- * Fetch sunniest cycling routes between two postcodes.
- * @param {string} start - UK postcode e.g. "N19 3DA"
- * @param {string} end - UK postcode e.g. "SE1 7PB"
- * @param {string|Date|null} departureAt - ISO timestamp/Date, or null for now
- */
-export async function fetchRoutes(start, end, departureAt = null) {
-  const departure = departureAt ? new Date(departureAt) : new Date();
-  if (Number.isNaN(departure.getTime())) {
-    throw new APIError("Invalid departure time", 400);
+export function hasCoordinates(place) {
+  return Number.isFinite(place?.latitude) && Number.isFinite(place?.longitude)
+    && Math.abs(place.latitude) <= 90 && Math.abs(place.longitude) <= 180;
+}
+
+export async function searchLocations(text, { signal } = {}) {
+  const query = text.trim();
+  if (query.length < 3) return [];
+  const data = await request(`/locations/search?text=${encodeURIComponent(query)}`, {
+    signal, timeoutMs: 15000,
+  });
+  if (!Array.isArray(data.results)) throw new APIError("The server returned an unreadable location list.", 502);
+  return data.results.filter(place => hasCoordinates(place)
+    && typeof place.label === "string" && typeof place.title === "string");
+}
+
+const compactPostcode = text => text.replace(/\s+/g, "").toUpperCase();
+const POSTCODE = /^(?:GIR0AA|[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2})$/;
+
+export async function resolveLocation(text, selected, { signal } = {}) {
+  if (selected?.label === text && hasCoordinates(selected)) return selected;
+  const postcode = compactPostcode(text);
+  if (!POSTCODE.test(postcode)) {
+    throw new APIError("Choose an address from the suggestions, or enter a full UK postcode.", 400);
   }
+  // Exact postcode matching only: never silently choose the first place-name result.
+  const results = await searchLocations(text, { signal });
+  const match = results.find(place => place.type === "postcode"
+    && compactPostcode(place.postcode || "") === postcode);
+  if (!match) throw new APIError(`Couldn't find ${text.trim()}. Check the postcode or choose an address instead.`, 400);
+  return match;
+}
 
-  const departureTime = [departure.getHours(), departure.getMinutes()]
-    .map(value => String(value).padStart(2, "0"))
-    .join(":");
-
+export async function fetchRoutes(start, end, departureAt = null, { signal } = {}) {
+  if (!hasCoordinates(start) || !hasCoordinates(end)) {
+    throw new APIError("Choose both locations before searching for routes.", 400);
+  }
+  const departure = departureAt === null ? new Date() : new Date(departureAt);
+  if (Number.isNaN(departure.getTime())) throw new APIError("Invalid departure time", 400);
+  const coordinates = place => ({ latitude: place.latitude, longitude: place.longitude });
   const data = await request("/routes", {
+    signal,
     method: "POST",
     body: JSON.stringify({
-      start: start.trim().toUpperCase(),
-      end: end.trim().toUpperCase(),
-      departure_time: departureTime,
+      start: coordinates(start), end: coordinates(end),
+      departure_at: departure.toISOString(),
     }),
   });
-
-  // The backend currently accepts HH:MM. Preserve the exact timestamp chosen
-  // on the device so ShadeMap and every frontend consumer use one instant.
-  return {
-    ...data,
-    departure_at: departure.toISOString(),
-  };
+  // Keep exactly the same instant for ShadeMap, including when postcode lookup was slow.
+  return { ...data, departure_at: departure.toISOString() };
 }
 
 export async function healthCheck() {
-  return request("/health");
+  return request("/health", { timeoutMs: 5000 });
 }

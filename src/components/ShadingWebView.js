@@ -9,7 +9,8 @@ import React, { useRef, useCallback } from 'react';
 import { StyleSheet, View, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-import { MAPBOX_TOKEN, SHADEMAP_KEY } from '../config';
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+const SHADEMAP_KEY = process.env.EXPO_PUBLIC_SHADEMAP_KEY;
 
 const { width: W, height: H } = Dimensions.get('window');
 

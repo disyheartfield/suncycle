@@ -14,5 +14,9 @@ src/config.js
 .DS_Store
 
 # Environment files
-.env
-.env.local
+.env*
+!.env.example
+
+.venv/
+__pycache__/
+*.pyc
