@@ -48,6 +48,22 @@ For a phone or Android emulator, use the address described under **Simulator and
 ```bash
 npm ci
 ```
+Your terminal may prompt you to update the expo packages. Then check that the installed packages match the project’s Expo version:
+```bash
+npx expo install --check
+```
+
+This project uses Expo SDK 56. If Expo lists packages that need compatible updates, such as expo-location, answer Yes to the suggested fixes. You may also see these messages during installation:
+
+“Packages are looking for funding” — informational; no action needed.
+
+“Deprecated” — a dependency maintenance warning, not necessarily an installation failure.
+
+“Vulnerabilities” — security findings that need review. Run npm audit for details; the Expo compatibility check does not resolve all security findings.
+
+Do not run npm audit fix --force or downgrade Expo simply to remove warnings. These actions can introduce incompatible versions. Dependency changes should be reviewed and tested before committing them.
+
+Once installation and the compatibility check finish successfully, continue to Step 3.
 
 ### 3. Create the Python environment and install the backend dependencies
 
