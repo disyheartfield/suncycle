@@ -176,7 +176,7 @@ To test on a phone:
 3. Temporarily update `BASE_URL` in `src/api.js`, for example:
 
    ```js
-   const BASE_URL = "http://192.168.1.123:8001";
+   const BASE_URL = "http://local_ip_address_here:8001";
    ```
 
 4. Start the backend with `--host 0.0.0.0` as shown above.
