@@ -142,6 +142,81 @@ You do not need to recreate `.venv` or reinstall dependencies for every session.
 
 After changing `.env`, restart the backend and Expo and fully reload the app. Existing shell environment variables take precedence; unset stale values if changes seem ignored. Keep configuration in `.env` rather than adding `.env.local` overrides.
 
+### Testing on a physical iPhone
+
+Complete the first-time setup above first. Run the following commands from the main SunCycle folder.
+
+**1. Prepare your iPhone**
+
+Connect it to your Mac with a USB cable, unlock it, and accept **Trust This Computer**.
+
+Enable **Settings → Privacy & Security → Developer Mode**, then restart and confirm when prompted. If that option is missing, first connect the phone to Xcode. [Developer Mode instructions](https://docs.expo.dev/guides/ios-developer-mode/)
+
+Keep your Mac and iPhone on the same Wi-Fi network.
+
+**2. Update the backend address**
+
+On your Mac, find its IP address under **System Settings → Wi-Fi → Details → TCP/IP**.
+
+In the root `.env`, change only the API address, using your Mac’s actual IP. For example:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://192.168.1.223:8001
+```
+
+Keep port `8001`. The address must be your Mac’s IP; `127.0.0.1` on an iPhone refers to the phone itself.
+
+**3. Start the backend**
+
+In one terminal:
+
+```bash
+source .venv/bin/activate
+python3 -m uvicorn backend.server:app --reload --host 0.0.0.0 --port 8001
+```
+
+Leave this running.
+
+On your iPhone, open Safari and visit your Mac’s address followed by `/health`, for example:
+
+```text
+http://192.168.1.223:8001/health
+```
+
+You should receive a response containing `"status":"ok"`. If it doesn’t load, check the IP address, Wi-Fi connection, and whether the Mac’s firewall allows the backend connection.
+
+**4. Install SunCycle on your iPhone**
+
+Stop any existing Expo server with **Ctrl+C**. In a second terminal, run:
+
+```bash
+npx expo run:ios --device
+```
+
+Select your connected iPhone. This builds and installs the phone version, even if you have already built the simulator version. [Expo device instructions](https://docs.expo.dev/develop/development-builds/introduction/)
+
+If Xcode reports a signing error, open the iOS project with:
+
+```bash
+xed ios
+```
+
+Select the app target → **Signing & Capabilities**, enable **Automatically manage signing**, and choose your Apple account’s team. Then retry the command. [Signing setup](https://github.com/expo/fyi/blob/main/setup-xcode-signing.md)
+
+Accept any required developer-trust prompts on the phone, and allow SunCycle access to the local network.
+
+**5. Run it again later**
+
+Start the backend as in step 3. In another terminal, start Expo:
+
+```bash
+npx expo start --dev-client --lan
+```
+
+Open the installed SunCycle app on your phone. Ordinary JavaScript changes do not require another native build. [Expo development guidance](https://docs.expo.dev/develop/development-builds/introduction/)
+
+Keep both servers running and your Mac reachable. If the Mac’s Wi-Fi IP changes, update `.env` and restart Expo.
+
 ## Simulator and device addresses
 
 Change only `EXPO_PUBLIC_API_URL` in the root `.env`:
